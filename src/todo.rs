@@ -5,6 +5,8 @@ extern crate unicase;
 
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
+use std::env;
+use std::str::FromStr;
 
 use rustc_serialize::json;
 use unicase::UniCase;
@@ -37,6 +39,12 @@ macro_rules! or_abort {
     )
 }
 
+/// Look up our server port number in PORT, for compatibility with Heroku.
+fn get_server_port() -> u16 {
+    let port_str = env::var("PORT").unwrap_or(String::new());
+    FromStr::from_str(&port_str).unwrap_or(8080)
+}
+
 fn main() {
     let mut router = insert_routes!{
         TreeRouter::new() => {
@@ -61,7 +69,7 @@ fn main() {
 
     let server_result = Server {
         handlers: router,
-        host: 8080.into(),
+        host: get_server_port().into(),
         content_type: content_type!(Application / Json; Charset = Utf8),
         global: Box::new(database).into(),
         ..Server::default()
