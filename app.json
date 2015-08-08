@@ -1,6 +1,6 @@
 {
   "name": "Todo backend in Rust",
-  "description": "A barebones Rust application using the Iron middleware framework",
+  "description": "A Rust application using Rustful",
   "repository": "https://github.com/RoPP/todo-backend-rustful",
   "success_url": "/",
   "keywords": ["rust"],
