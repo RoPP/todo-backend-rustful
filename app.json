@@ -1,0 +1,10 @@
+{
+  "name": "Todo backend in Rust",
+  "description": "A barebones Rust application using the Iron middleware framework",
+  "repository": "https://github.com/RoPP/todo-backend-rustful",
+  "success_url": "/",
+  "keywords": ["rust"],
+  "env": {
+    "BUILDPACK_URL": "https://github.com/emk/heroku-buildpack-rust.git"
+  }
+}
