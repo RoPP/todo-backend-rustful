@@ -27,7 +27,7 @@ use rustful::header::{
     Host
 };
 use rustful::StatusCode;
-use rustful::context::ExtJsonBody;
+use rustful::context::body::ExtJsonBody;
 
 //Helper for setting a status code and then returning from a function
 macro_rules! or_abort {
@@ -123,7 +123,7 @@ fn get_todo(database: &Database, context: Context, mut response: Response) {
     let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
 
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
@@ -146,7 +146,7 @@ fn edit_todo(database: &Database, mut context: Context, mut response: Response) 
     let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
 
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
@@ -165,7 +165,7 @@ fn edit_todo(database: &Database, mut context: Context, mut response: Response) 
 //Delete a to-do, selected by its id
 fn delete_todo(database: &Database, context: Context, mut response: Response) {
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
@@ -188,7 +188,7 @@ impl Handler for Api {
         //Setup cross origin resource sharing
         response.headers_mut().set(AccessControlAllowOrigin::Any);
         response.headers_mut().set(AccessControlAllowMethods(methods));
-        response.headers_mut().set(AccessControlAllowHeaders(vec![UniCase("content-type".into())]));
+        response.headers_mut().set(AccessControlAllowHeaders(vec![UniCase("content-type".to_string())]));
 
         //Get the database from the global storage
         let database = if let Some(database) = context.global.get() {
