@@ -5,6 +5,10 @@ extern crate rustful;
 extern crate rustc_serialize;
 extern crate unicase;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
 use std::env;
@@ -21,21 +25,23 @@ use rustful::{
     TreeRouter
 };
 use rustful::header::{
+    ContentType,
     AccessControlAllowOrigin,
     AccessControlAllowMethods,
     AccessControlAllowHeaders,
     Host
 };
 use rustful::StatusCode;
-use rustful::context::body::ExtJsonBody;
 
 //Helper for setting a status code and then returning from a function
 macro_rules! or_abort {
-    ($e: expr, $response: expr, $status: expr) => (
+    ($e: expr, $response: expr, $error_message: expr) => (
         if let Some(v) = $e {
             v
         } else {
-            $response.set_status($status);
+            $response.set_status(StatusCode::BadRequest);
+            $response.headers_mut().set(ContentType(content_type!(Text / Plain; Charset = Utf8)));
+            $response.send($error_message);
             return
         }
     )
@@ -47,7 +53,13 @@ fn get_server_port() -> u16 {
     FromStr::from_str(&port_str).unwrap_or(8080)
 }
 
+const BAD_ENTITY : &'static str = "Couldn't parse the todo";
+const BAD_ID : &'static str = "The 'id' parameter should be a non-negative integer";
+const MISSING_HOST_HEADER : &'static str = "No 'Host' header was sent";
+
 fn main() {
+    env_logger::init().unwrap();
+
     let mut router = insert_routes!{
         TreeRouter::new() => {
             Get: Api(Some(list_all)),
@@ -77,31 +89,39 @@ fn main() {
         ..Server::default()
     }.run();
 
-    if let Err(e) = server_result {
-        println!("could not run the server: {}", e)
-    }
+    match server_result {
+      Ok(server) => {
+        println!(
+          "This example is a showcase implementation of Todo-Backend project (http://todobackend.com/), \
+          visit http://localhost:{0}/ to try it or run reference test suite by pointing \
+          your browser to http://todobackend.com/specs/index.html?http://localhost:{0}",
+          server.socket.port()
+        );
+      },
+      Err(e) => error!("could not run the server: {}", e)
+    };
 }
 
 //List all the to-dos in the database
 fn list_all(database: &Database, context: Context, mut response: Response) {
-    let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
-    let todos: Vec<_> = database.read().unwrap().iter().map(|(&id, todo)| {
-        NetworkTodo::from_todo(todo, host, id)
-    }).collect();
+    let todos: Vec<_> = database.read().unwrap().iter()
+      .map(|(&id, todo)| NetworkTodo::from_todo(todo, host, id))
+      .collect();
 
     response.send(json::encode(&todos).unwrap());
 }
 
-//Store a new to-do with data fro the request body
+//Store a new to-do with data from the request body
 fn store(database: &Database, mut context: Context, mut response: Response) {
     let todo: NetworkTodo = or_abort!(
         context.body.decode_json_body().ok(),
         response,
-        StatusCode::BadRequest
+        BAD_ENTITY
     );
 
-    let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let mut database = database.write().unwrap();
     database.insert(todo.into());
@@ -120,35 +140,40 @@ fn clear(database: &Database, _context: Context, _response: Response) {
 
 //Send one particular to-do, selected by its id
 fn get_todo(database: &Database, context: Context, mut response: Response) {
-    let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let id = or_abort!(
         context.variables.parse("id").ok(),
         response,
-        StatusCode::BadRequest
+        BAD_ID
     );
 
     let todo = database.read().unwrap().get(id).map(|todo| {
         NetworkTodo::from_todo(&todo, host, id)
     });
 
-    response.send(json::encode(&todo).unwrap());
+    match todo {
+      Some(todo) => response.send(json::encode(&todo).unwrap()),
+      None =>  {
+        response.set_status(StatusCode::NotFound);
+      }
+    };
 }
 
-//Update a to-do, selected by its, id with data from the request body
+//Update a to-do, selected by its id with data from the request body
 fn edit_todo(database: &Database, mut context: Context, mut response: Response) {
     let edits = or_abort!(
         context.body.decode_json_body().ok(),
         response,
-        StatusCode::BadRequest
+        BAD_ENTITY
     );
 
-    let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let id = or_abort!(
         context.variables.parse("id").ok(),
         response,
-        StatusCode::BadRequest
+        BAD_ID
     );
 
     let mut database =  database.write().unwrap();
@@ -167,7 +192,7 @@ fn delete_todo(database: &Database, context: Context, mut response: Response) {
     let id = or_abort!(
         context.variables.parse("id").ok(),
         response,
-        StatusCode::BadRequest
+        BAD_ID
     );
 
     database.write().unwrap().delete(id);
@@ -182,19 +207,19 @@ struct Api(Option<fn(&Database, Context, Response)>);
 impl Handler for Api {
     fn handle_request(&self, context: Context, mut response: Response) {
         //Collect the accepted methods from the provided hyperlinks
-        let mut methods: Vec<_> = context.hypermedia.links.iter().filter_map(|l| l.method.clone()).collect();
+        let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
         methods.push(context.method.clone());
 
         //Setup cross origin resource sharing
         response.headers_mut().set(AccessControlAllowOrigin::Any);
         response.headers_mut().set(AccessControlAllowMethods(methods));
-        response.headers_mut().set(AccessControlAllowHeaders(vec![UniCase("content-type".to_string())]));
+        response.headers_mut().set(AccessControlAllowHeaders(vec![UniCase("content-type".into())]));
 
         //Get the database from the global storage
         let database = if let Some(database) = context.global.get() {
             database
         } else {
-            context.log.error("expected a globally accessible Database");
+            error!("expected a globally accessible Database");
             response.set_status(StatusCode::InternalServerError);
             return
         };

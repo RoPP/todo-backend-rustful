@@ -1,13 +1,15 @@
 [package]
 
 name = "todo-backend-rustful"
-version = "0.0.2"
+version = "0.8.0"
 authors = ["Rodolphe PELLOUX-PRAYER <rodolphe@damsy.net>"]
 
 [[bin]]
 name = "todo"
 
 [dependencies]
-rustful = "0.5"
+rustful = "0.8"
 rustc-serialize = "0.3"
 unicase = "1.0"
+log = "0.3"
+env_logger = "0.3"
