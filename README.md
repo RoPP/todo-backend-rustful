@@ -1,3 +1,7 @@
+[![Clippy Linting Result](https://clippy.bashy.io/github/RoPP/todo-backend-rustful/master/badge.svg)](https://clippy.bashy.io/github/RoPP/todo-backend-rustful/master/log)
+
+---
+
 To deploy this application to Heroku, use this button:
 
 [![Deploy](https://www.herokucdn.com/deploy/button.png)](https://heroku.com/deploy)
